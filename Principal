@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Totem Refeitório</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #1f2937;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+
+    <div class="bg-white p-6 md:p-8 rounded-3xl shadow-2xl w-full max-w-sm mx-auto">
+        <div class="flex flex-col items-center mb-6">
+            <i class="fa-brands fa-bluetooth text-5xl text-blue-500 mb-2"></i>
+            <h1 class="text-3xl font-bold text-center text-gray-800">Totem Refeitório</h1>
+            <p class="text-sm text-gray-500 text-center mt-1">Dados em Tempo Real</p>
+        </div>
+
+        <div id="status" class="bg-blue-100 text-blue-700 p-3 rounded-xl text-sm font-medium text-center mb-6 transition-all duration-300">
+            Aguardando para conectar...
+        </div>
+
+        <div id="dashboard-data" class="grid grid-cols-2 gap-4">
+
+            <!-- Card para o Sensor -->
+            <div class="bg-gray-100 p-4 rounded-xl shadow-inner flex flex-col items-center">
+                <span class="text-4xl font-bold text-gray-800" id="sensor-value">0</span>
+                <span class="text-sm font-medium text-gray-500 mt-1">Sensor (cm)</span>
+            </div>
+
+            <!-- Card para a Bebida -->
+            <div class="bg-gray-100 p-4 rounded-xl shadow-inner flex flex-col items-center">
+                <span class="text-4xl font-bold text-gray-800" id="bebida-value">0</span>
+                <span class="text-sm font-medium text-gray-500 mt-1">Bebida</span>
+            </div>
+
+            <!-- Card para a Comida -->
+            <div class="bg-gray-100 p-4 rounded-xl shadow-inner flex flex-col items-center">
+                <span class="text-4xl font-bold text-gray-800" id="comida-value">0</span>
+                <span class="text-sm font-medium text-gray-500 mt-1">Comida</span>
+            </div>
+
+            <!-- Card para o Aluno -->
+            <div class="bg-gray-100 p-4 rounded-xl shadow-inner flex flex-col items-center">
+                <span class="text-4xl font-bold text-gray-800" id="aluno-value">0</span>
+                <span class="text-sm font-medium text-gray-500 mt-1">Alunos</span>
+            </div>
+
+        </div>
+
+        <button id="connect-button" class="mt-6 w-full py-3 px-4 bg-blue-600 text-white rounded-xl font-semibold text-lg hover:bg-blue-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-lg">
+            Conectar Bluetooth
+        </button>
+
+    </div>
+
+    <script>
+        // UUIDs para o Serviço de Porta Serial Bluetooth
+        // A UUID é a mesma para serviço e característica, que é o padrão para o perfil SPP
+        const serviceUuid = "00001101-0000-1000-8000-00805f9b34fb";
+        const characteristicUuid = "00001101-0000-1000-8000-00805f9b34fb";
+        
+        let bluetoothDevice;
+        let serialCharacteristic;
+        let dataBuffer = '';
+
+        const statusElement = document.getElementById('status');
+        const connectButton = document.getElementById('connect-button');
+        const sensorValue = document.getElementById('sensor-value');
+        const bebidaValue = document.getElementById('bebida-value');
+        const comidaValue = document.getElementById('comida-value');
+        const alunoValue = document.getElementById('aluno-value');
+
+        // Adiciona um listener para o botão de conexão
+        connectButton.addEventListener('click', connectToArduino);
+
+        function updateStatus(message, isError = false) {
+            statusElement.textContent = message;
+            statusElement.className = `p-3 rounded-xl text-sm font-medium text-center mb-6 transition-all duration-300`;
+            if (isError) {
+                statusElement.classList.add('bg-red-100', 'text-red-700');
+            } else {
+                statusElement.classList.add('bg-blue-100', 'text-blue-700');
+            }
+        }
+
+        function handleCharacteristicValueChanged(event) {
+            const value = event.target.value;
+            const decoder = new TextDecoder('utf-8');
+            const dataChunk = decoder.decode(value);
+
+            // Adiciona o pedaço de dados ao buffer
+            dataBuffer += dataChunk;
+
+            // Processa o buffer quando uma nova linha é detectada
+            while (dataBuffer.includes('\n')) {
+                const newlineIndex = dataBuffer.indexOf('\n');
+                const completeData = dataBuffer.substring(0, newlineIndex).trim();
+                dataBuffer = dataBuffer.substring(newlineIndex + 1);
+
+                // Tenta analisar o JSON
+                try {
+                    const jsonData = JSON.parse(completeData);
+                    updateDashboard(jsonData);
+                    updateStatus("Dados recebidos com sucesso!");
+                } catch (error) {
+                    console.error("Erro ao analisar JSON:", error);
+                    console.log("Dados recebidos (não JSON):", completeData);
+                    // Não atualiza o status para evitar poluir com mensagens de erro se for apenas lixo de dados
+                }
+            }
+        }
+
+        function updateDashboard(data) {
+            sensorValue.textContent = data.sensor;
+            bebidaValue.textContent = data.bebida;
+            comidaValue.textContent = data.comida;
+            alunoValue.textContent = data.aluno;
+        }
+
+        async function connectToArduino() {
+            try {
+                updateStatus("Buscando dispositivos Bluetooth...");
+                connectButton.disabled = true;
+
+                // Conecta a um dispositivo com o serviço SPP e nome HC-05 (pode ser o nome padrão)
+                bluetoothDevice = await navigator.bluetooth.requestDevice({
+                    filters: [{
+                        namePrefix: 'HC-05',
+                    }, {
+                        services: [serviceUuid],
+                    }]
+                });
+
+                updateStatus(`Conectado ao dispositivo: ${bluetoothDevice.name}`);
+
+                bluetoothDevice.addEventListener('gattserverdisconnected', onGattServerDisconnected);
+
+                const server = await bluetoothDevice.gatt.connect();
+                const service = await server.getPrimaryService(serviceUuid);
+                serialCharacteristic = await service.getCharacteristic(characteristicUuid);
+
+                await serialCharacteristic.startNotifications();
+                serialCharacteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
+
+                updateStatus("Conexão estabelecida e ouvindo dados!");
+                connectButton.textContent = 'Dispositivo Conectado';
+            } catch (error) {
+                console.error("Ocorreu um erro:", error);
+                updateStatus(`Erro: ${error.message || "Não foi possível conectar."}`, true);
+                connectButton.disabled = false;
+                connectButton.textContent = 'Tentar Conectar Novamente';
+            }
+        }
+
+        function onGattServerDisconnected() {
+            updateStatus("Dispositivo desconectado.", true);
+            connectButton.disabled = false;
+            connectButton.textContent = 'Conectar Bluetooth';
+            // Limpa o listener para evitar reconexões indesejadas
+            if (serialCharacteristic) {
+                serialCharacteristic.removeEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
+            }
+        }
+
+        // Informa ao usuário que ele precisa de HTTPS para usar a API Bluetooth
+        window.addEventListener('load', () => {
+            if (window.location.protocol !== 'https:') {
+                updateStatus("Aviso: A API Web Bluetooth só funciona em conexões seguras (HTTPS). Por favor, hospede esta página ou use a URL de visualização.", true);
+                connectButton.disabled = true;
+            }
+        });
+    </script>
+</body>
+</html>
