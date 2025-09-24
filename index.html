@@ -133,7 +133,9 @@
 
                 // Conecta a um dispositivo com o serviço SPP
                 bluetoothDevice = await navigator.bluetooth.requestDevice({
-                     acceptAllDevices: true,
+                     filters: [{
+                        services: [serviceUuid]
+                     }]
                 });
 
                 updateStatus(`Conectado ao dispositivo: ${bluetoothDevice.name}`);
